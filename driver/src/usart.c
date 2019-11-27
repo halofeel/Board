@@ -2,10 +2,15 @@
 #include "stm32f10x_gpio.h"
 #include "stm32f10x_usart.h"
 
+
 #include "usart.h"
 
 
 #define USE_UART1
+
+
+ring pt_ring_buff ;
+
 typedef struct
 {
 	GPIO_TypeDef* 		gpio_port;
@@ -29,16 +34,22 @@ USART_STRUCT usartList[UART_MAX] =
 	
 	}
 	
-	
 #endif
 	
 
-
-
-
 };
 
+void USART1_IRQHandler(void)
+{
+	USART_ClearITPendingBit(USART1,USART1_IRQn);//清除中断标志位
+	uint16_t data = 0;
+	if(USART_GetFlagStatus(USART1,USART_FLAG_RXNE)==1)
+	{
+		data = USART_ReceiveData(USART1);
+		ring_buff_insert(pt_ring_buff,data);
+	}
 
+}
 
 /*gpio初始化*/
 void uart_init_f(void)
@@ -48,9 +59,13 @@ void uart_init_f(void)
 	for(int i = 0;i<UART_MAX;i++)
 	{
 		RCC_APB2PeriphClockCmd(usartList[i].clock,ENABLE);
-		gpioStruct.GPIO_Mode = usartList[i].mode;
-		gpioStruct.GPIO_Pin = usartList[i].gpio_pin_rx|usartList[i].gpio_pin_tx;
+		gpioStruct.GPIO_Mode = GPIO_Mode_IN_FLOATING;//usartList[i].mode; //接收必须设置正确的模式，否则无法接收数据
+		gpioStruct.GPIO_Pin = usartList[i].gpio_pin_rx;
 		gpioStruct.GPIO_Speed = usartList[i].speed;
+		GPIO_Init(usartList[i].gpio_port,&gpioStruct);
+		
+		gpioStruct.GPIO_Pin = usartList[i].gpio_pin_tx;
+		gpioStruct.GPIO_Mode = GPIO_Mode_AF_PP;//usartList[i].mode;
 		GPIO_Init(usartList[i].gpio_port,&gpioStruct);
 	}
 }
@@ -70,9 +85,19 @@ void uart_init(void)
 	USART_InitStruct.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
 	
 	USART_Init(USART1,&USART_InitStruct);
+	
+	
+	NVIC_InitTypeDef NVIC_InitStructure;
+	NVIC_InitStructure.NVIC_IRQChannel = USART1_IRQn;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 2;
+	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 2;
+	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+	NVIC_Init(&NVIC_InitStructure);
+	
+	USART_ITConfig(USART1,USART_IT_RXNE,ENABLE);
 	USART_Cmd(USART1,ENABLE);
 	
-
+	pt_ring_buff = fifo_init();
 }
 
 int fputc(int ch,FILE *f)
