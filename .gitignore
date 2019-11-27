@@ -31,6 +31,8 @@ GPUCache
 cscope.*
 ncscope.*
 
+*.zip
+
 #ctag files
 tags
 
